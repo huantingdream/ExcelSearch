@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "excel-search"
+version = "0.1.0"
+description = "在本机索引并搜索 Excel 工作表 C 列内容的跨平台桌面应用"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "ExcelSearch" }]
+dependencies = [
+    "openpyxl>=3.1,<4",
+    "PySide6>=6.8,<7",
+    "xlrd>=2.0,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<10",
+    "pytest-cov>=6,<8",
+]
+build = [
+    "pyinstaller>=6.11,<7",
+]
+
+[project.scripts]
+excel-search = "excel_search.__main__:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

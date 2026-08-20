@@ -1,0 +1,52 @@
+name: Test and build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install project and test dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Run tests
+        run: python -m pytest
+
+  build-windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Build portable app and installer
+        shell: powershell
+        run: .\scripts\build_windows.ps1 -SkipTests
+      - name: Upload Windows packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ExcelSearch-Windows-x64
+          path: |
+            release/ExcelSearch-Windows-x64.zip
+            release/ExcelSearch-Setup.exe
+          if-no-files-found: error
