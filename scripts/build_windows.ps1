@@ -20,7 +20,7 @@ try {
             & python -m venv $buildEnvironment
         }
         else {
-            throw "未找到 Python。请安装 64 位 Python 3.12 后重新运行。"
+            throw "Python was not found. Install 64-bit Python 3.12 and run this script again."
         }
     }
 
@@ -38,7 +38,7 @@ try {
         $env:EXCELSEARCH_SMOKE_TEST = "1"
         & (Join-Path $projectRoot "dist\ExcelSearch\ExcelSearch.exe")
         if ($LASTEXITCODE -ne 0) {
-            throw "打包后的 ExcelSearch.exe 启动检查失败，退出代码：$LASTEXITCODE"
+            throw "The packaged ExcelSearch.exe smoke test failed with exit code $LASTEXITCODE."
         }
     }
     finally {
@@ -57,12 +57,12 @@ try {
         & $innoSetup (Join-Path $projectRoot "packaging\windows\ExcelSearch.iss")
     }
     else {
-        Write-Warning "未安装 Inno Setup 6，已生成便携版 ZIP，但没有生成安装包。"
-        Write-Warning "安装 Inno Setup 6 后重新运行本脚本即可生成 ExcelSearch-Setup.exe。"
+        Write-Warning "Inno Setup 6 was not found. The portable ZIP was built, but the installer was not."
+        Write-Warning "Install Inno Setup 6 and run this script again to create ExcelSearch-Setup.exe."
     }
 
     Write-Host ""
-    Write-Host "Windows 成品位于：$releaseDirectory"
+    Write-Host "Windows packages are available in: $releaseDirectory"
 }
 finally {
     Pop-Location
