@@ -23,9 +23,6 @@ SetupLogging=yes
 CloseApplications=yes
 UninstallDisplayIcon={app}\ExcelSearch.exe
 
-[Languages]
-Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
-
 [Files]
 Source: "{#ProjectRoot}\dist\ExcelSearch\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
