@@ -1,3 +1,5 @@
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from excel_search.database import IndexDatabase
@@ -5,14 +7,15 @@ from excel_search.models import CellEntry
 from excel_search.text import normalize_text
 
 
-def _entry(row: int, content: str) -> CellEntry:
+def _entry(row: int, content: str, value_d: str = "") -> CellEntry:
     return CellEntry(
         sheet="物料表",
         row_number=row,
         value_a="HZ015",
         value_b=f"B{row}",
         content=content,
-        normalized=normalize_text(content),
+        value_d=value_d,
+        normalized=normalize_text(f"{content} {value_d}"),
     )
 
 
@@ -31,19 +34,24 @@ def test_searches_chinese_and_mixed_fragments(tmp_path: Path) -> None:
         workbook,
         [
             _entry(2, "美式排插 四孔长方形 0.9M 带开关 白色 墨西哥"),
-            _entry(3, "美式排插 六孔长方形 1.5M TYPE-C"),
+            _entry(3, "美式排插 六孔长方形 1.5M", "TYPE-C 墨西哥许可"),
         ],
     )
 
     chinese = database.search("四孔长方形")
     assert len(chinese) == 1
-    assert chinese[0].cell_reference == "C2"
+    assert chinese[0].cell_reference == "C2 / D2"
     assert chinese[0].value_a == "HZ015"
 
     mixed = database.search("0.9m 墨西哥")
     assert [result.row_number for result in mixed] == [2]
 
-    assert [result.row_number for result in database.search("type-c")] == [3]
+    d_column = database.search("type-c")
+    assert [result.row_number for result in d_column] == [3]
+    assert d_column[0].value_d == "TYPE-C 墨西哥许可"
+
+    cross_column = database.search("六孔 墨西哥")
+    assert [result.row_number for result in cross_column] == [3]
 
 
 def test_replacing_a_file_removes_stale_results(tmp_path: Path) -> None:
@@ -64,3 +72,50 @@ def test_short_queries_fall_back_to_substring_search(tmp_path: Path) -> None:
     _index(database, workbook, [_entry(8, "USB C 接口")])
 
     assert [result.row_number for result in database.search("C")] == [8]
+
+
+def test_schema_v1_is_migrated_and_existing_files_become_stale(tmp_path: Path) -> None:
+    database_path = tmp_path / "old-index.db"
+    with closing(sqlite3.connect(database_path)) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE files (
+                id INTEGER PRIMARY KEY,
+                file_key TEXT NOT NULL UNIQUE,
+                path TEXT NOT NULL,
+                name TEXT NOT NULL,
+                size INTEGER NOT NULL DEFAULT 0,
+                mtime_ns INTEGER NOT NULL DEFAULT 0,
+                indexed_at TEXT,
+                status TEXT NOT NULL DEFAULT 'ready',
+                error TEXT NOT NULL DEFAULT '',
+                cell_count INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE cells (
+                id INTEGER PRIMARY KEY,
+                file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+                sheet TEXT NOT NULL,
+                row_number INTEGER NOT NULL,
+                cell_reference TEXT NOT NULL,
+                value_a TEXT NOT NULL DEFAULT '',
+                value_b TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL,
+                normalized TEXT NOT NULL
+            );
+            INSERT INTO files(file_key, path, name, status)
+            VALUES('old', 'old.xlsx', 'old.xlsx', 'ready');
+            """
+        )
+        connection.commit()
+
+    database = IndexDatabase(database_path)
+    database.initialize()
+
+    with database.session() as connection:
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(cells)").fetchall()
+        }
+        status = connection.execute("SELECT status FROM files").fetchone()["status"]
+    assert "value_d" in columns
+    assert status == "stale"
+    assert database.has_stale_files()

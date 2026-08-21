@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS cells (
     value_a TEXT NOT NULL DEFAULT '',
     value_b TEXT NOT NULL DEFAULT '',
     content TEXT NOT NULL,
+    value_d TEXT NOT NULL DEFAULT '',
     normalized TEXT NOT NULL
 );
 
@@ -83,10 +84,24 @@ class IndexDatabase:
             connection.execute("PRAGMA journal_mode = WAL")
             connection.execute("PRAGMA synchronous = NORMAL")
             connection.executescript(SCHEMA)
+            self._migrate_schema(connection)
             self._initialize_full_text_search(connection)
             connection.execute(
-                "INSERT INTO meta(key, value) VALUES('schema_version', '1') "
+                "INSERT INTO meta(key, value) VALUES('schema_version', '2') "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+            )
+
+    @staticmethod
+    def _migrate_schema(connection: sqlite3.Connection) -> None:
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(cells)").fetchall()
+        }
+        if "value_d" not in columns:
+            connection.execute(
+                "ALTER TABLE cells ADD COLUMN value_d TEXT NOT NULL DEFAULT ''"
+            )
+            connection.execute(
+                "UPDATE files SET status='stale', error='' WHERE status='ready'"
             )
 
     def _initialize_full_text_search(self, connection: sqlite3.Connection) -> None:
@@ -201,6 +216,7 @@ class IndexDatabase:
                         entry.value_a,
                         entry.value_b,
                         entry.content,
+                        entry.value_d,
                         entry.normalized,
                     )
                 )
@@ -238,8 +254,8 @@ class IndexDatabase:
             """
             INSERT INTO cells(
                 file_id, sheet, row_number, cell_reference,
-                value_a, value_b, content, normalized
-            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                value_a, value_b, content, value_d, normalized
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -323,7 +339,7 @@ class IndexDatabase:
             SELECT
                 f.path, f.name, f.mtime_ns,
                 c.sheet, c.row_number, c.cell_reference,
-                c.value_a, c.value_b, c.content,
+                c.value_a, c.value_b, c.content, c.value_d,
                 bm25(cell_fts) AS score
             FROM cell_fts
             JOIN cells c ON c.id = cell_fts.rowid
@@ -346,7 +362,7 @@ class IndexDatabase:
             SELECT
                 f.path, f.name, f.mtime_ns,
                 c.sheet, c.row_number, c.cell_reference,
-                c.value_a, c.value_b, c.content
+                c.value_a, c.value_b, c.content, c.value_d
             FROM cells c
             JOIN files f ON f.id = c.file_id
             WHERE f.status = 'ready' AND {conditions}
@@ -375,6 +391,13 @@ class IndexDatabase:
             source_count=int(source_count),
         )
 
+    def has_stale_files(self) -> bool:
+        with self.session() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM files WHERE status='stale' LIMIT 1"
+            ).fetchone()
+        return row is not None
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -395,4 +418,5 @@ def _row_to_result(row: sqlite3.Row) -> SearchResult:
         value_a=row["value_a"],
         value_b=row["value_b"],
         content=row["content"],
+        value_d=row["value_d"],
     )

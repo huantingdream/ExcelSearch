@@ -11,11 +11,12 @@ class CellEntry:
     value_a: str
     value_b: str
     content: str
+    value_d: str
     normalized: str
 
     @property
     def cell_reference(self) -> str:
-        return f"C{self.row_number}"
+        return f"C{self.row_number} / D{self.row_number}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +30,7 @@ class SearchResult:
     value_a: str
     value_b: str
     content: str
+    value_d: str
 
 
 @dataclass(frozen=True, slots=True)

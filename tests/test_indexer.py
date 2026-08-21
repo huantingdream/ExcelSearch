@@ -10,13 +10,16 @@ def _make_workbook(path: Path) -> None:
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = "物料"
-    worksheet.append(["工厂代码", "物料编号", "物料名称", "其他列"])
-    worksheet.append(["HZ015", "B20103S16", "美式排插 四孔长方形 0.9M", "不应被搜索"])
-    worksheet.append(["HZ021", "B20102S2E", "美式转换插座", "忽略内容"])
+    worksheet.append(["工厂代码", "物料编号", "物料名称", "补充说明", "其他列"])
+    worksheet.append(
+        ["HZ015", "B20103S16", "美式排插 四孔长方形 0.9M", "D列墨西哥说明", "不应被搜索"]
+    )
+    worksheet.append(["HZ021", "B20102S2E", "美式转换插座", "D列许可内容", "忽略内容"])
+    worksheet.append(["HZ022", "B20102S2F", None, "仅D列关键词", "忽略内容"])
     workbook.save(path)
 
 
-def test_indexes_only_a_b_c_context_and_content(tmp_path: Path) -> None:
+def test_indexes_a_b_context_and_searches_c_d_content(tmp_path: Path) -> None:
     workbook_path = tmp_path / "示例.xlsx"
     _make_workbook(workbook_path)
     database = IndexDatabase(tmp_path / "index.db")
@@ -25,11 +28,14 @@ def test_indexes_only_a_b_c_context_and_content(tmp_path: Path) -> None:
     summary = IndexService(database).index([workbook_path], register_sources=True)
 
     assert summary.indexed == 1
-    assert summary.cells == 3  # header plus two non-empty C cells
+    assert summary.cells == 4  # header plus three rows with C or D content
     result = database.search("四孔长方形")[0]
     assert result.value_a == "HZ015"
     assert result.value_b == "B20103S16"
-    assert result.cell_reference == "C2"
+    assert result.cell_reference == "C2 / D2"
+    assert result.value_d == "D列墨西哥说明"
+    assert database.search("D列许可内容")[0].row_number == 3
+    assert database.search("仅D列关键词")[0].row_number == 4
     assert database.search("不应被搜索") == []
     assert database.stats().source_count == 1
 

@@ -18,7 +18,7 @@ def main() -> int:
     if sys.platform == "win32":
         try:
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                "ExcelSearch.Desktop.0.1"
+                "ExcelSearch.Desktop.0.2"
             )
         except Exception:
             pass

@@ -152,6 +152,8 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._apply_style()
         self.refresh_stats()
+        if self.database.has_stale_files():
+            QTimer.singleShot(0, self.refresh_index)
 
     def _build_ui(self) -> None:
         central = QWidget(self)
@@ -161,7 +163,7 @@ class MainWindow(QMainWindow):
 
         title = QLabel("Excel 内容搜索")
         title.setObjectName("title")
-        subtitle = QLabel("搜索工作表 C 列文字；A、B 列仅用于帮助确认结果，图片不会被索引。")
+        subtitle = QLabel("搜索工作表 C、D 列文字；A、B 列用于帮助确认结果，图片不会被索引。")
         subtitle.setObjectName("subtitle")
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -184,7 +186,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(action_row)
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("输入物料名称中的关键词，例如：四孔长方形  0.9M  墨西哥")
+        self.search_input.setPlaceholderText("输入 C 或 D 列中的关键词，例如：四孔长方形  0.9M  墨西哥")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.returnPressed.connect(self.search)
         self.search_input.textChanged.connect(lambda: self._search_timer.start())
@@ -194,7 +196,7 @@ class MainWindow(QMainWindow):
         self.status_label.setObjectName("status")
         layout.addWidget(self.status_label)
 
-        self.table = QTableWidget(0, 8)
+        self.table = QTableWidget(0, 9)
         self.table.setHorizontalHeaderLabels(
             [
                 "文件",
@@ -203,6 +205,7 @@ class MainWindow(QMainWindow):
                 "工厂代码（A）",
                 "物料编号（B）",
                 "物料名称（C）",
+                "D 列内容",
                 "修改时间",
                 "完整路径",
             ]
@@ -218,16 +221,18 @@ class MainWindow(QMainWindow):
         self.table.customContextMenuRequested.connect(self.show_result_menu)
         self.table.cellDoubleClicked.connect(lambda row, _column: self.open_result(row))
         self.table.setItemDelegateForColumn(5, self._highlight_delegate)
+        self.table.setItemDelegateForColumn(6, self._highlight_delegate)
 
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(True)
         self.table.setColumnWidth(0, 180)
         self.table.setColumnWidth(1, 120)
-        self.table.setColumnWidth(2, 75)
+        self.table.setColumnWidth(2, 110)
         self.table.setColumnWidth(3, 120)
         self.table.setColumnWidth(4, 140)
-        self.table.setColumnWidth(5, 420)
+        self.table.setColumnWidth(5, 340)
+        self.table.setColumnWidth(6, 220)
         layout.addWidget(self.table, 1)
 
         hint = QLabel("提示：双击结果可打开原始 Excel；右键可以在文件管理器中显示或复制路径。")
@@ -418,6 +423,7 @@ class MainWindow(QMainWindow):
                     result.value_a,
                     result.value_b,
                     result.content,
+                    result.value_d,
                     format_modified_time(result.modified_ns),
                     str(result.file_path),
                 )
@@ -472,7 +478,7 @@ class MainWindow(QMainWindow):
 
     def refresh_stats(self) -> None:
         stats = self.database.stats()
-        status = f"已索引 {stats.ready_files} 个文件、{stats.cell_count} 条 C 列内容"
+        status = f"已索引 {stats.ready_files} 个文件、{stats.cell_count} 条 C/D 列内容"
         if stats.failed_files:
             status += f"；{stats.failed_files} 个文件需要处理"
         self.status_label.setText(status)

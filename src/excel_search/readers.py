@@ -37,11 +37,12 @@ def _iter_openpyxl(path: Path) -> Iterator[CellEntry]:
     try:
         for worksheet in workbook.worksheets:
             for row_number, values in enumerate(
-                worksheet.iter_rows(min_col=1, max_col=3, values_only=True), start=1
+                worksheet.iter_rows(min_col=1, max_col=4, values_only=True), start=1
             ):
-                value_a, value_b, value_c = values
+                value_a, value_b, value_c, value_d = values
                 content = display_value(value_c)
-                if not content:
+                extra_content = display_value(value_d)
+                if not content and not extra_content:
                     continue
                 yield CellEntry(
                     sheet=worksheet.title,
@@ -49,7 +50,8 @@ def _iter_openpyxl(path: Path) -> Iterator[CellEntry]:
                     value_a=display_value(value_a),
                     value_b=display_value(value_b),
                     content=content,
-                    normalized=normalize_text(content),
+                    value_d=extra_content,
+                    normalized=normalize_text(f"{content} {extra_content}"),
                 )
     finally:
         workbook.close()
@@ -66,10 +68,11 @@ def _iter_xlrd(path: Path) -> Iterator[CellEntry]:
                     _xlrd_display_value(workbook, worksheet.cell(row_index, column_index))
                     if column_index < worksheet.ncols
                     else ""
-                    for column_index in range(3)
+                    for column_index in range(4)
                 ]
                 content = values[2]
-                if not content:
+                extra_content = values[3]
+                if not content and not extra_content:
                     continue
                 yield CellEntry(
                     sheet=worksheet.name,
@@ -77,7 +80,8 @@ def _iter_xlrd(path: Path) -> Iterator[CellEntry]:
                     value_a=values[0],
                     value_b=values[1],
                     content=content,
-                    normalized=normalize_text(content),
+                    value_d=extra_content,
+                    normalized=normalize_text(f"{content} {extra_content}"),
                 )
     finally:
         workbook.release_resources()

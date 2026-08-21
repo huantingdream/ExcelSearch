@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "excel-search"
-version = "0.1.0"
-description = "在本机索引并搜索 Excel 工作表 C 列内容的跨平台桌面应用"
+version = "0.2.0"
+description = "在本机索引并搜索 Excel 工作表 C、D 列内容的跨平台桌面应用"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
