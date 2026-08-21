@@ -87,12 +87,19 @@ class IndexDatabase:
             self._migrate_schema(connection)
             self._initialize_full_text_search(connection)
             connection.execute(
-                "INSERT INTO meta(key, value) VALUES('schema_version', '2') "
+                "INSERT INTO meta(key, value) VALUES('schema_version', '3') "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
             )
 
     @staticmethod
     def _migrate_schema(connection: sqlite3.Connection) -> None:
+        version_row = connection.execute(
+            "SELECT value FROM meta WHERE key='schema_version'"
+        ).fetchone()
+        try:
+            previous_version = int(version_row["value"]) if version_row else 0
+        except (TypeError, ValueError):
+            previous_version = 0
         columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(cells)").fetchall()
         }
@@ -100,6 +107,7 @@ class IndexDatabase:
             connection.execute(
                 "ALTER TABLE cells ADD COLUMN value_d TEXT NOT NULL DEFAULT ''"
             )
+        if previous_version < 3:
             connection.execute(
                 "UPDATE files SET status='stale', error='' WHERE status='ready'"
             )

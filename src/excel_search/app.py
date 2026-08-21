@@ -163,7 +163,7 @@ class MainWindow(QMainWindow):
 
         title = QLabel("Excel 内容搜索")
         title.setObjectName("title")
-        subtitle = QLabel("搜索工作表 C、D 列文字；A、B 列用于帮助确认结果，图片不会被索引。")
+        subtitle = QLabel("搜索工作表 A、B、C、D 四列文字；图片不会被索引。")
         subtitle.setObjectName("subtitle")
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -186,7 +186,9 @@ class MainWindow(QMainWindow):
         layout.addLayout(action_row)
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("输入 C 或 D 列中的关键词，例如：四孔长方形  0.9M  墨西哥")
+        self.search_input.setPlaceholderText(
+            "输入 A–D 任一列关键词，例如：HZ015  B20103S16  四孔长方形  墨西哥"
+        )
         self.search_input.setClearButtonEnabled(True)
         self.search_input.returnPressed.connect(self.search)
         self.search_input.textChanged.connect(lambda: self._search_timer.start())
@@ -220,6 +222,8 @@ class MainWindow(QMainWindow):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.show_result_menu)
         self.table.cellDoubleClicked.connect(lambda row, _column: self.open_result(row))
+        self.table.setItemDelegateForColumn(3, self._highlight_delegate)
+        self.table.setItemDelegateForColumn(4, self._highlight_delegate)
         self.table.setItemDelegateForColumn(5, self._highlight_delegate)
         self.table.setItemDelegateForColumn(6, self._highlight_delegate)
 
@@ -478,7 +482,7 @@ class MainWindow(QMainWindow):
 
     def refresh_stats(self) -> None:
         stats = self.database.stats()
-        status = f"已索引 {stats.ready_files} 个文件、{stats.cell_count} 条 C/D 列内容"
+        status = f"已索引 {stats.ready_files} 个文件、{stats.cell_count} 条 A–D 列内容"
         if stats.failed_files:
             status += f"；{stats.failed_files} 个文件需要处理"
         self.status_label.setText(status)

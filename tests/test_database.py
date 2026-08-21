@@ -8,14 +8,16 @@ from excel_search.text import normalize_text
 
 
 def _entry(row: int, content: str, value_d: str = "") -> CellEntry:
+    value_a = "HZ015"
+    value_b = f"B{row}"
     return CellEntry(
         sheet="物料表",
         row_number=row,
-        value_a="HZ015",
-        value_b=f"B{row}",
+        value_a=value_a,
+        value_b=value_b,
         content=content,
         value_d=value_d,
-        normalized=normalize_text(f"{content} {value_d}"),
+        normalized=normalize_text(f"{value_a} {value_b} {content} {value_d}"),
     )
 
 
@@ -52,6 +54,9 @@ def test_searches_chinese_and_mixed_fragments(tmp_path: Path) -> None:
 
     cross_column = database.search("六孔 墨西哥")
     assert [result.row_number for result in cross_column] == [3]
+
+    a_b_columns = database.search("hz015 B3 type-c")
+    assert [result.row_number for result in a_b_columns] == [3]
 
 
 def test_replacing_a_file_removes_stale_results(tmp_path: Path) -> None:
@@ -119,3 +124,18 @@ def test_schema_v1_is_migrated_and_existing_files_become_stale(tmp_path: Path) -
     assert "value_d" in columns
     assert status == "stale"
     assert database.has_stale_files()
+
+
+def test_schema_v2_files_become_stale_for_a_b_search_upgrade(tmp_path: Path) -> None:
+    database = IndexDatabase(tmp_path / "v2-index.db")
+    database.initialize()
+    _index(database, tmp_path / "old-v2.xlsx", [_entry(2, "旧版索引")])
+    with database.session() as connection:
+        connection.execute(
+            "UPDATE meta SET value='2' WHERE key='schema_version'"
+        )
+
+    database.initialize()
+
+    assert database.has_stale_files()
+    assert database.stats().ready_files == 0

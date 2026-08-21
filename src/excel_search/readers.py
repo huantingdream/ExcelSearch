@@ -40,18 +40,22 @@ def _iter_openpyxl(path: Path) -> Iterator[CellEntry]:
                 worksheet.iter_rows(min_col=1, max_col=4, values_only=True), start=1
             ):
                 value_a, value_b, value_c, value_d = values
+                context_a = display_value(value_a)
+                context_b = display_value(value_b)
                 content = display_value(value_c)
                 extra_content = display_value(value_d)
-                if not content and not extra_content:
+                if not context_a and not context_b and not content and not extra_content:
                     continue
                 yield CellEntry(
                     sheet=worksheet.title,
                     row_number=row_number,
-                    value_a=display_value(value_a),
-                    value_b=display_value(value_b),
+                    value_a=context_a,
+                    value_b=context_b,
                     content=content,
                     value_d=extra_content,
-                    normalized=normalize_text(f"{content} {extra_content}"),
+                    normalized=normalize_text(
+                        f"{context_a} {context_b} {content} {extra_content}"
+                    ),
                 )
     finally:
         workbook.close()
@@ -72,7 +76,7 @@ def _iter_xlrd(path: Path) -> Iterator[CellEntry]:
                 ]
                 content = values[2]
                 extra_content = values[3]
-                if not content and not extra_content:
+                if not any(values):
                     continue
                 yield CellEntry(
                     sheet=worksheet.name,
@@ -81,7 +85,7 @@ def _iter_xlrd(path: Path) -> Iterator[CellEntry]:
                     value_b=values[1],
                     content=content,
                     value_d=extra_content,
-                    normalized=normalize_text(f"{content} {extra_content}"),
+                    normalized=normalize_text(" ".join(values)),
                 )
     finally:
         workbook.release_resources()

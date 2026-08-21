@@ -1,16 +1,53 @@
 from __future__ import annotations
 
 import os
+import pickle
+import tempfile
 from collections.abc import Callable, Iterable
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import BinaryIO
 
 from .database import IndexDatabase
-from .models import IndexOutcome, IndexSummary
+from .models import CellEntry, IndexOutcome, IndexSummary
 from .paths import canonical_file_key
 from .readers import SUPPORTED_EXTENSIONS, iter_searchable_cells
 
 
 ProgressCallback = Callable[[int, int, str], None]
+
+
+def index_worker_count(file_count: int) -> int:
+    if file_count <= 1:
+        return max(0, file_count)
+    configured = os.environ.get("EXCELSEARCH_INDEX_WORKERS", "").strip()
+    if configured:
+        try:
+            return min(file_count, max(1, int(configured)))
+        except ValueError:
+            pass
+    cpu_count = os.cpu_count() or 2
+    return min(file_count, max(2, min(4, cpu_count)))
+
+
+def _read_workbook(path: Path) -> BinaryIO:
+    buffer = tempfile.TemporaryFile(mode="w+b")
+    try:
+        for entry in iter_searchable_cells(path):
+            pickle.dump(entry, buffer, protocol=pickle.HIGHEST_PROTOCOL)
+        buffer.seek(0)
+        return buffer
+    except Exception:
+        buffer.close()
+        raise
+
+
+def _iter_buffered_entries(buffer: BinaryIO) -> Iterable[CellEntry]:
+    while True:
+        try:
+            yield pickle.load(buffer)
+        except EOFError:
+            return
 
 
 def collect_excel_files(inputs: Iterable[Path]) -> tuple[Path, ...]:
@@ -58,10 +95,10 @@ class IndexService:
         files = collect_excel_files(input_paths)
         outcomes: list[IndexOutcome] = []
         indexed = skipped = failed = cells = 0
+        completed = 0
+        pending: list[tuple[Path, int, int]] = []
 
-        for position, file_path in enumerate(files, start=1):
-            if progress:
-                progress(position, len(files), file_path.name)
+        for file_path in files:
             try:
                 stat = file_path.stat()
                 if not force and self.database.file_is_current(
@@ -69,21 +106,56 @@ class IndexService:
                 ):
                     skipped += 1
                     outcomes.append(IndexOutcome(file_path, "skipped"))
-                    continue
-                cell_count = self.database.replace_file_cells(
-                    file_path,
-                    stat.st_size,
-                    stat.st_mtime_ns,
-                    iter_searchable_cells(file_path),
-                )
-                indexed += 1
-                cells += cell_count
-                outcomes.append(IndexOutcome(file_path, "indexed", cell_count))
+                    completed += 1
+                    if progress:
+                        progress(completed, len(files), file_path.name)
+                else:
+                    pending.append((file_path, stat.st_size, stat.st_mtime_ns))
             except Exception as exc:  # one bad workbook must not stop the batch
                 message = _friendly_error(exc)
                 self.database.record_error(file_path, message)
                 failed += 1
                 outcomes.append(IndexOutcome(file_path, "failed", error=message))
+                completed += 1
+                if progress:
+                    progress(completed, len(files), file_path.name)
+
+        worker_count = index_worker_count(len(pending))
+        if worker_count:
+            if progress:
+                progress(completed, len(files), f"使用 {worker_count} 个线程并行读取 Excel")
+            with ThreadPoolExecutor(
+                max_workers=worker_count,
+                thread_name_prefix="excel-index",
+            ) as executor:
+                futures: dict[Future[BinaryIO], tuple[Path, int, int]] = {
+                    executor.submit(_read_workbook, path): (path, size, mtime_ns)
+                    for path, size, mtime_ns in pending
+                }
+                for future in as_completed(futures):
+                    file_path, size, mtime_ns = futures[future]
+                    try:
+                        buffer = future.result()
+                        try:
+                            cell_count = self.database.replace_file_cells(
+                                file_path,
+                                size,
+                                mtime_ns,
+                                _iter_buffered_entries(buffer),
+                            )
+                        finally:
+                            buffer.close()
+                        indexed += 1
+                        cells += cell_count
+                        outcomes.append(IndexOutcome(file_path, "indexed", cell_count))
+                    except Exception as exc:  # one bad workbook must not stop the batch
+                        message = _friendly_error(exc)
+                        self.database.record_error(file_path, message)
+                        failed += 1
+                        outcomes.append(IndexOutcome(file_path, "failed", error=message))
+                    completed += 1
+                    if progress:
+                        progress(completed, len(files), file_path.name)
 
         self.database.mark_missing_files()
         return IndexSummary(
